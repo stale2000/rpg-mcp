@@ -51,6 +51,9 @@ function syncParticipantHpFromDb(state: CombatState): CombatState {
             if (character.hp !== participant.hp) {
                 participant.hp = character.hp;
             }
+            if ((character.tempHp ?? 0) !== (participant.tempHp ?? 0)) {
+                participant.tempHp = character.tempHp ?? 0;
+            }
             if (character.maxHp !== participant.maxHp) {
                 participant.maxHp = character.maxHp;
             }
@@ -68,6 +71,9 @@ function syncParticipantHpFromDb(state: CombatState): CombatState {
  * Build a machine-readable state object for frontend sync
  */
 function buildStateJson(state: CombatState, encounterId: string, sessionId?: string) {
+    const db = getDb(process.env.NODE_ENV === 'test' ? ':memory:' : 'rpg.db');
+    const charRepo = new CharacterRepository(db);
+    const concentrationRepo = new ConcentrationRepository(db);
     const currentParticipant = state.participants.find(
         (p) => p.id === state.turnOrder[state.currentTurnIndex]
     );
@@ -86,10 +92,31 @@ function buildStateJson(state: CombatState, encounterId: string, sessionId?: str
             const p = state.participants.find(part => part.id === id);
             return p?.name || id;
         }),
-        participants: state.participants.map(p => ({
+        participants: state.participants.map(p => {
+            const character = charRepo.findById(p.id);
+            return ({
+            ...(() => {
+                const concentration = concentrationRepo.findByCharacterId(p.id);
+                return {
+                    concentration: concentration
+                        ? {
+                            active: true,
+                            source: concentration.activeSpell
+                        }
+                        : character?.concentratingOn
+                            ? {
+                                active: true,
+                                source: character.concentratingOn
+                            }
+                            : {
+                                active: false
+                            }
+                };
+            })(),
             id: p.id,
             name: p.name,
             hp: p.hp,
+            tempHp: character?.tempHp ?? p.tempHp ?? 0,
             maxHp: p.maxHp,
             initiative: p.initiative,
             isEnemy: p.isEnemy,
@@ -105,7 +132,7 @@ function buildStateJson(state: CombatState, encounterId: string, sessionId?: str
             ac: p.ac,
             attackDamage: p.attackDamage,
             attackBonus: p.attackBonus
-        })),
+        })}),
         // HIGH-006: Lair action status
         isLairActionPending: state.turnOrder[state.currentTurnIndex] === 'LAIR',
         hasLairActions: state.hasLairActions ?? false,
@@ -575,6 +602,7 @@ Example (use real UUID from context for player character!):
                 name: z.string(),
                 initiativeBonus: z.number().int(),
                 hp: z.number().int().nonnegative(), // Allow 0 HP for dying characters
+                tempHp: z.number().int().min(0).optional(),
                 maxHp: z.number().int().positive(),
                 isEnemy: z.boolean().optional().describe('Whether this is an enemy (auto-detected if not set)'),
                 hasLairActions: z.boolean().optional()
@@ -1052,6 +1080,8 @@ MAZE WITH ROOMS:
 // Tool handlers
 export async function handleCreateEncounter(args: unknown, ctx: SessionContext) {
     const parsed = CombatTools.CREATE_ENCOUNTER.inputSchema.parse(args);
+    const db = getDb(process.env.NODE_ENV === 'test' ? ':memory:' : 'rpg.db');
+    const charRepo = new CharacterRepository(db);
 
     // Create combat engine
     const engine = new CombatEngine(parsed.seed, pubsub || undefined);
@@ -1089,11 +1119,14 @@ export async function handleCreateEncounter(args: unknown, ctx: SessionContext) 
             };
         }
 
+        const character = charRepo.findById(p.id);
+
         const participant = {
             // CRITICAL FIX: Auto-generate ID if not provided to prevent React key collisions
             id: p.id || randomUUID(),
             name: preset ? preset.name : p.name,
             hp: p.hp,
+            tempHp: p.tempHp ?? character?.tempHp ?? 0,
             maxHp: p.maxHp,
             initiative: 0, // Will be rolled
             initiativeBonus: p.initiativeBonus ?? 0,
@@ -1127,7 +1160,6 @@ export async function handleCreateEncounter(args: unknown, ctx: SessionContext) 
     getCombatManager().create(`${ctx.sessionId}:${encounterId}`, engine);
 
     // Persist initial state
-    const db = getDb(process.env.NODE_ENV === 'test' ? ':memory:' : 'rpg.db');
     const repo = new EncounterRepository(db);
 
     // Create the encounter record first (with initiative and isEnemy).
@@ -1144,6 +1176,7 @@ export async function handleCreateEncounter(args: unknown, ctx: SessionContext) 
             isEnemy: p.isEnemy,          // Store enemy flag
             hasLairActions: p.hasLairActions,  // PR #59 follow-up: persist lair flag so loadState can rebuild the LAIR slot
             hp: p.hp,
+            tempHp: p.tempHp ?? 0,
             maxHp: p.maxHp,
             conditions: p.conditions,
             abilityScores: p.abilityScores,
@@ -1413,7 +1446,10 @@ export async function handleExecuteCombatAction(args: unknown, ctx: SessionConte
             if (targetParticipant) {
                 const targetChar = charRepo.findById(parsed.targetId);
                 if (targetChar) {
-                    charRepo.update(parsed.targetId, { hp: targetParticipant.hp });
+                    charRepo.update(parsed.targetId, {
+                        hp: targetParticipant.hp,
+                        tempHp: targetParticipant.tempHp ?? 0,
+                    });
                 }
             }
         }
@@ -1486,7 +1522,10 @@ export async function handleExecuteCombatAction(args: unknown, ctx: SessionConte
             if (targetParticipant) {
                 const targetChar = charRepo.findById(parsed.targetId);
                 if (targetChar) {
-                    charRepo.update(parsed.targetId, { hp: targetParticipant.hp });
+                    charRepo.update(parsed.targetId, {
+                        hp: targetParticipant.hp,
+                        tempHp: targetParticipant.tempHp ?? 0,
+                    });
                 }
             }
         }

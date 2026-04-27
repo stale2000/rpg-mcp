@@ -21,6 +21,7 @@ export const CharacterSchema = z.object({
         cha: z.number().int().min(0),
     }),
     hp: z.number().int().min(0),
+    tempHp: z.number().int().min(0).optional().default(0),
     maxHp: z.number().int().min(0),
     ac: z.number().int().min(0),
     level: z.number().int().min(1),

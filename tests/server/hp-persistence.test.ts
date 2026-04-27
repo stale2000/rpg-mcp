@@ -9,6 +9,7 @@ import {
 import {
     handleCreateCharacter,
     handleGetCharacter,
+    handleUpdateCharacter,
     closeTestDb
 } from '../helpers/legacy-handlers.js';
 import { closeDb, getDb } from '../../src/storage';
@@ -521,5 +522,97 @@ describe('PLAYTEST-FIX: HP Sync from character_manage to combat display', () => 
         const heroInCombat = state.participants.find((p: any) => p.id === character.id);
 
         expect(heroInCombat.hp).toBe(22);
+    });
+});
+
+describe('TEMP HP: authoritative character and combat state', () => {
+    beforeEach(() => {
+        closeDb();
+        getDb(':memory:');
+        clearCombatState();
+    });
+
+    afterEach(() => {
+        closeTestDb();
+    });
+
+    it('should persist temp HP, emit it in STATE_JSON, and consume it before HP damage', async () => {
+        const charResult = await handleCreateCharacter({
+            name: 'Temp Hero',
+            stats: { str: 14, dex: 12, con: 14, int: 10, wis: 10, cha: 10 },
+            hp: 20,
+            maxHp: 20,
+            tempHp: 5,
+            ac: 15,
+            level: 2,
+            provisionEquipment: false
+        }, mockCtx);
+        const character = extractEmbeddedJson(charResult.content[0].text, 'CHARACTER');
+        expect(character.tempHp).toBe(5);
+
+        const encounterResult = await handleCreateEncounter({
+            seed: 'temp-hp-authoritative',
+            participants: [
+                {
+                    id: character.id,
+                    name: character.name,
+                    initiativeBonus: 2,
+                    hp: character.hp,
+                    maxHp: character.maxHp,
+                    tempHp: character.tempHp,
+                    conditions: []
+                },
+                {
+                    id: 'enemy-goblin',
+                    name: 'Goblin',
+                    initiativeBonus: 1,
+                    hp: 10,
+                    maxHp: 10,
+                    isEnemy: true,
+                    conditions: []
+                }
+            ]
+        }, mockCtx);
+
+        const createdState = extractStateJson(encounterResult.content[0].text);
+        const encounterId = createdState.encounterId;
+        const heroAtStart = createdState.participants.find((p: any) => p.id === character.id);
+        expect(heroAtStart.tempHp).toBe(5);
+        expect(heroAtStart.hp).toBe(20);
+
+        await handleExecuteCombatAction({
+            encounterId,
+            action: 'attack',
+            actorId: 'enemy-goblin',
+            targetId: character.id,
+            attackBonus: 5,
+            dc: 15,
+            damage: 3
+        }, mockCtx);
+
+        const damagedState = extractStateJson(
+            (await handleGetEncounterState({ encounterId }, mockCtx)).content[0].text
+        );
+        const heroAfterDamage = damagedState.participants.find((p: any) => p.id === character.id);
+        expect(heroAfterDamage.tempHp).toBe(2);
+        expect(heroAfterDamage.hp).toBe(20);
+
+        const damagedCharacter = extractEmbeddedJson(
+            (await handleGetCharacter({ id: character.id }, mockCtx)).content[0].text,
+            'CHARACTER'
+        );
+        expect(damagedCharacter.tempHp).toBe(2);
+        expect(damagedCharacter.hp).toBe(20);
+
+        await handleUpdateCharacter({
+            id: character.id,
+            tempHp: 9
+        }, mockCtx);
+
+        const syncedState = extractStateJson(
+            (await handleGetEncounterState({ encounterId }, mockCtx)).content[0].text
+        );
+        const heroAfterSync = syncedState.participants.find((p: any) => p.id === character.id);
+        expect(heroAfterSync.tempHp).toBe(9);
     });
 });

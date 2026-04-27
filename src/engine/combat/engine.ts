@@ -26,6 +26,7 @@ export interface CombatParticipant {
     initiative?: number;  // Rolled initiative value (set when encounter starts)
     isEnemy?: boolean;    // Whether this is an enemy (for turn automation)
     hp: number;
+    tempHp?: number;
     maxHp: number;
     conditions: Condition[];
     position?: { x: number; y: number; z?: number };  // CRIT-003: Spatial position
@@ -117,6 +118,8 @@ export interface CombatActionResult {
     type: 'attack' | 'heal' | 'damage' | 'save';
     actor: { id: string; name: string };
     target: { id: string; name: string; hpBefore: number; hpAfter: number; maxHp: number };
+    tempHpBefore?: number;
+    tempHpAfter?: number;
     
     // Attack specifics (if type === 'attack')
     attackRoll?: CheckResult;
@@ -591,6 +594,25 @@ export class CombatEngine {
         return { finalDamage: baseDamage, modifier: 'normal' };
     }
 
+    private applyDamageToParticipant(target: CombatParticipant, damage: number) {
+        const tempHpBefore = target.tempHp ?? 0;
+        const hpBefore = target.hp;
+        const absorbedByTempHp = Math.min(tempHpBefore, damage);
+        const damageToHp = Math.max(0, damage - absorbedByTempHp);
+
+        target.tempHp = tempHpBefore - absorbedByTempHp;
+        target.hp = Math.max(0, target.hp - damageToHp);
+
+        return {
+            hpBefore,
+            hpAfter: target.hp,
+            tempHpBefore,
+            tempHpAfter: target.tempHp,
+            absorbedByTempHp,
+            damageToHp,
+        };
+    }
+
     /**
      * Execute an attack with full transparency
      * Returns detailed breakdown of what happened
@@ -612,6 +634,7 @@ export class CombatEngine {
         if (!target) throw new Error(`Target ${targetId} not found`);
 
         const hpBefore = target.hp;
+        const tempHpBefore = target.tempHp ?? 0;
 
         // Roll with full transparency
         const attackRoll = this.rng.checkDegreeDetailed(attackBonus, dc);
@@ -641,10 +664,11 @@ export class CombatEngine {
             const modResult = this.calculateDamageWithModifiers(finalBaseDamage, damageType, target);
             damageDealt = modResult.finalDamage;
             damageModifier = modResult.modifier;
-            target.hp = Math.max(0, target.hp - damageDealt);
+            this.applyDamageToParticipant(target, damageDealt);
         }
 
         const defeated = target.hp <= 0;
+        const tempHpAfter = target.tempHp ?? 0;
 
         // Build detailed breakdown
         let breakdown = `🎲 Attack Roll: d20(${attackRoll.roll}) + ${attackBonus} = ${attackRoll.total} vs AC ${dc}\n`;
@@ -672,6 +696,9 @@ export class CombatEngine {
             }
 
             breakdown += `\n\n💥 Damage: ${damageDealt}${typeStr}${damageBreakdownStr}${attackRoll.isCrit ? ' (crit)' : ''}${modStr}\n`;
+            if (tempHpBefore > 0 || tempHpAfter > 0) {
+                breakdown += `   ${target.name}: Temp HP ${tempHpBefore} → ${tempHpAfter}\n`;
+            }
             breakdown += `   ${target.name}: ${hpBefore} → ${target.hp}/${target.maxHp} HP`;
             if (defeated) {
                 breakdown += ` [DEFEATED]`;
@@ -706,6 +733,8 @@ export class CombatEngine {
             type: 'attack',
             actor: { id: actor.id, name: actor.name },
             target: { id: target.id, name: target.name, hpBefore, hpAfter: target.hp, maxHp: target.maxHp },
+            tempHpBefore,
+            tempHpAfter,
             attackRoll,
             damage: damageDealt,
             success: attackRoll.isHit,
@@ -728,6 +757,7 @@ export class CombatEngine {
         if (!target) throw new Error(`Target ${targetId} not found`);
 
         const hpBefore = target.hp;
+        const tempHpBefore = target.tempHp ?? 0;
         const actualHeal = Math.min(amount, target.maxHp - target.hp);
         target.hp = Math.min(target.maxHp, target.hp + amount);
 
@@ -751,6 +781,8 @@ export class CombatEngine {
             type: 'heal',
             actor: { id: actor.id, name: actor.name },
             target: { id: target.id, name: target.name, hpBefore, hpAfter: target.hp, maxHp: target.maxHp },
+            tempHpBefore,
+            tempHpAfter: target.tempHp ?? 0,
             healAmount: actualHeal,
             success: true,
             defeated: false,
@@ -784,12 +816,13 @@ export class CombatEngine {
 
         const participant = this.state.participants.find(p => p.id === participantId);
         if (participant) {
-            participant.hp = Math.max(0, participant.hp - damage);
+            this.applyDamageToParticipant(participant, damage);
             this.emitter?.publish('combat', {
                 type: 'damage_applied',
                 participantId,
                 amount: damage,
-                newHp: participant.hp
+                newHp: participant.hp,
+                newTempHp: participant.tempHp ?? 0,
             });
         }
     }
@@ -1420,15 +1453,17 @@ export class CombatEngine {
         const baseDamage = this.rng.roll('1d6') + 2;
 
         const hpBefore = target.hp;
+        const tempHpBefore = target.tempHp ?? 0;
         const attackRoll = this.rng.checkDegreeDetailed(attackBonus, targetAC);
 
         let damageDealt = 0;
         if (attackRoll.isHit) {
             damageDealt = attackRoll.isCrit ? baseDamage * 2 : baseDamage;
-            target.hp = Math.max(0, target.hp - damageDealt);
+            this.applyDamageToParticipant(target, damageDealt);
         }
 
         const defeated = target.hp <= 0;
+        const tempHpAfter = target.tempHp ?? 0;
 
         // Build detailed breakdown
         let breakdown = `⚡ OPPORTUNITY ATTACK by ${attacker.name}!\n`;
@@ -1445,6 +1480,9 @@ export class CombatEngine {
         if (attackRoll.isHit) {
             breakdown += attackRoll.isCrit ? ' (CRITICAL!)' : '';
             breakdown += `\n\n💥 Damage: ${damageDealt}${attackRoll.isCrit ? ' (crit)' : ''}\n`;
+            if (tempHpBefore > 0 || tempHpAfter > 0) {
+                breakdown += `   ${target.name}: Temp HP ${tempHpBefore} → ${tempHpAfter}\n`;
+            }
             breakdown += `   ${target.name}: ${hpBefore} → ${target.hp}/${target.maxHp} HP`;
             if (defeated) {
                 breakdown += ` [DEFEATED]`;
@@ -1474,6 +1512,8 @@ export class CombatEngine {
             type: 'attack',
             actor: { id: attacker.id, name: attacker.name },
             target: { id: target.id, name: target.name, hpBefore, hpAfter: target.hp, maxHp: target.maxHp },
+            tempHpBefore,
+            tempHpAfter,
             attackRoll,
             damage: damageDealt,
             success: attackRoll.isHit,

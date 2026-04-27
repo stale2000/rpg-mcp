@@ -70,6 +70,7 @@ export function migrate(db: Database.Database) {
     name TEXT NOT NULL,
     stats TEXT NOT NULL, --JSON
       hp INTEGER NOT NULL,
+    temp_hp INTEGER NOT NULL DEFAULT 0,
     max_hp INTEGER NOT NULL,
     ac INTEGER NOT NULL,
     level INTEGER NOT NULL,
@@ -675,6 +676,7 @@ function runMigrations(db: Database.Database) {
 
   // CRIT-002/006: Add spellcasting columns to characters table
   const hasCharacterClass = charColumns.some(col => col.name === 'character_class');
+  const hasTempHp = charColumns.some(col => col.name === 'temp_hp');
   const hasSpellSlots = charColumns.some(col => col.name === 'spell_slots');
   const hasPactMagicSlots = charColumns.some(col => col.name === 'pact_magic_slots');
   const hasKnownSpells = charColumns.some(col => col.name === 'known_spells');
@@ -684,6 +686,10 @@ function runMigrations(db: Database.Database) {
   const hasConcentratingOn = charColumns.some(col => col.name === 'concentrating_on');
   const hasConditions = charColumns.some(col => col.name === 'conditions');
 
+  if (!hasTempHp) {
+    console.error('[Migration] Adding temp_hp column to characters table');
+    db.exec(`ALTER TABLE characters ADD COLUMN temp_hp INTEGER NOT NULL DEFAULT 0;`);
+  }
   if (!hasCharacterClass) {
     console.error('[Migration] Adding character_class column to characters table');
     db.exec(`ALTER TABLE characters ADD COLUMN character_class TEXT DEFAULT 'fighter';`);

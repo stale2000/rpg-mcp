@@ -71,6 +71,7 @@ const CreateSchema = z.object({
     alignment: z.string().optional(),
     stats: StatsSchema.optional().default({ str: 10, dex: 10, con: 10, int: 10, wis: 10, cha: 10 }),
     hp: z.number().int().min(1).optional(),
+    tempHp: z.number().int().min(0).optional().default(0),
     maxHp: z.number().int().min(1).optional(),
     ac: z.number().int().min(0).optional().default(10),
     level: z.number().int().min(1).optional().default(1),
@@ -105,6 +106,7 @@ const UpdateSchema = z.object({
     race: z.string().optional(),
     class: z.string().optional(),
     hp: z.number().int().min(0).optional(),
+    tempHp: z.number().int().min(0).optional(),
     maxHp: z.number().int().min(1).optional(),
     ac: z.number().int().min(0).optional(),
     level: z.number().int().min(1).optional(),
@@ -201,6 +203,7 @@ async function handleCreate(args: z.infer<typeof CreateSchema>): Promise<object>
         characterClass: className,
         stats: args.stats || { str: 10, dex: 10, con: 10, int: 10, wis: 10, cha: 10 },
         hp,
+        tempHp: args.tempHp ?? 0,
         maxHp,
         ac: args.ac ?? 10,
         level: args.level ?? 1,
@@ -294,6 +297,7 @@ async function handleUpdate(args: z.infer<typeof UpdateSchema>): Promise<object>
     if (args.race !== undefined) updateData.race = args.race;
     if (args.class !== undefined) updateData.characterClass = args.class;
     if (args.hp !== undefined) updateData.hp = args.hp;
+    if (args.tempHp !== undefined) updateData.tempHp = args.tempHp;
     if (args.maxHp !== undefined) updateData.maxHp = args.maxHp;
     if (args.ac !== undefined) updateData.ac = args.ac;
     if (args.level !== undefined) updateData.level = args.level;
@@ -564,6 +568,7 @@ Aliases: new/add/spawn->create, fetch/find->get, modify/edit->update`,
         alignment: z.string().optional(),
         stats: StatsSchema.optional(),
         hp: z.number().int().optional(),
+        tempHp: z.number().int().optional(),
         maxHp: z.number().int().optional(),
         ac: z.number().int().optional(),
         level: z.number().int().optional(),

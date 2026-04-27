@@ -89,6 +89,7 @@ export const TokenSchema = z.object({
     initiative: z.number().optional(),  // Rolled initiative value
     isEnemy: z.boolean().optional(),    // Whether this is an enemy
     hp: z.number(),
+    tempHp: z.number().int().min(0).optional().default(0),
     maxHp: z.number(),
     conditions: z.array(ConditionSchema),
     position: PositionSchema.optional(), // CRIT-003: Spatial position for movement

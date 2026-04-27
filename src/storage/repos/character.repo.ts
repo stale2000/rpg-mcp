@@ -11,13 +11,13 @@ export class CharacterRepository {
         const validChar = isNPC ? NPCSchema.parse(character) : CharacterSchema.parse(character);
 
         const stmt = this.db.prepare(`
-      INSERT INTO characters (id, name, stats, hp, max_hp, ac, level, faction_id, behavior, character_type,
+      INSERT INTO characters (id, name, stats, hp, temp_hp, max_hp, ac, level, faction_id, behavior, character_type,
                               character_class, race, spell_slots, pact_magic_slots, known_spells, prepared_spells,
                               cantrips_known, max_spell_level, concentrating_on, conditions,
                               legendary_actions, legendary_actions_remaining, legendary_resistances,
                               legendary_resistances_remaining, has_lair_actions, resistances, vulnerabilities, immunities,
                               current_room_id, perception_bonus, stealth_bonus, created_at, updated_at)
-      VALUES (@id, @name, @stats, @hp, @maxHp, @ac, @level, @factionId, @behavior, @characterType,
+      VALUES (@id, @name, @stats, @hp, @tempHp, @maxHp, @ac, @level, @factionId, @behavior, @characterType,
               @characterClass, @race, @spellSlots, @pactMagicSlots, @knownSpells, @preparedSpells,
               @cantripsKnown, @maxSpellLevel, @concentratingOn, @conditions,
               @legendaryActions, @legendaryActionsRemaining, @legendaryResistances,
@@ -30,6 +30,7 @@ export class CharacterRepository {
             name: validChar.name,
             stats: JSON.stringify(validChar.stats),
             hp: validChar.hp,
+            tempHp: validChar.tempHp ?? 0,
             maxHp: validChar.maxHp,
             ac: validChar.ac,
             level: validChar.level,
@@ -110,7 +111,7 @@ export class CharacterRepository {
 
         const stmt = this.db.prepare(`
             UPDATE characters
-            SET name = ?, stats = ?, hp = ?, max_hp = ?, ac = ?, level = ?,
+            SET name = ?, stats = ?, hp = ?, temp_hp = ?, max_hp = ?, ac = ?, level = ?,
                 faction_id = ?, behavior = ?, character_type = ?,
                 character_class = ?, race = ?, spell_slots = ?, pact_magic_slots = ?,
                 known_spells = ?, prepared_spells = ?, cantrips_known = ?,
@@ -126,6 +127,7 @@ export class CharacterRepository {
             validChar.name,
             JSON.stringify(validChar.stats),
             validChar.hp,
+            validChar.tempHp ?? 0,
             validChar.maxHp,
             validChar.ac,
             validChar.level,
@@ -176,6 +178,7 @@ export class CharacterRepository {
             name: row.name,
             stats: JSON.parse(row.stats),
             hp: row.hp,
+            tempHp: row.temp_hp ?? 0,
             maxHp: row.max_hp,
             ac: row.ac,
             level: row.level,
@@ -226,6 +229,7 @@ interface CharacterRow {
     name: string;
     stats: string;
     hp: number;
+    temp_hp: number | null;
     max_hp: number;
     ac: number;
     level: number;
