@@ -8,6 +8,7 @@
 import { ToolMetadata, ToolCategory, ToolRegistry } from './tool-metadata.js';
 import { ConsolidatedTools } from './consolidated/index.js';
 import { SessionContext } from './types.js';
+import { publishConsolidatedToolRegistry } from './tool-registry-holder.js';
 
 // ═══════════════════════════════════════════════════════════════════════════
 // METADATA HELPERS
@@ -139,7 +140,10 @@ const TOOL_CAPABILITIES: Record<string, string[]> = {
 let cachedRegistry: ToolRegistry | null = null;
 
 export function buildConsolidatedRegistry(): ToolRegistry {
-    if (cachedRegistry) return cachedRegistry;
+    if (cachedRegistry) {
+        publishConsolidatedToolRegistry(cachedRegistry);
+        return cachedRegistry;
+    }
 
     cachedRegistry = {};
 
@@ -165,6 +169,7 @@ export function buildConsolidatedRegistry(): ToolRegistry {
         };
     }
 
+    publishConsolidatedToolRegistry(cachedRegistry);
     return cachedRegistry;
 }
 

@@ -13,7 +13,7 @@ import { CharacterRepository } from '../../storage/repos/character.repo.js';
 import { InventoryRepository } from '../../storage/repos/inventory.repo.js';
 import { ItemRepository } from '../../storage/repos/item.repo.js';
 import { SessionContext } from '../types.js';
-import { buildConsolidatedRegistry } from '../consolidated-registry.js';
+import { getConsolidatedToolRegistry } from '../tool-registry-holder.js';
 
 export interface McpResponse {
     content: Array<{ type: 'text'; text: string }>;
@@ -653,7 +653,7 @@ async function handleExecuteSequence(input: BatchManageInput, ctx: SessionContex
         };
     }
 
-    const registry = buildConsolidatedRegistry();
+    const registry = getConsolidatedToolRegistry();
     const stopOnError = input.stopOnError ?? true;
 
     const stepResults = new Map<string, unknown>();
